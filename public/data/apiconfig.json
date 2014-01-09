@@ -55,12 +55,14 @@
         "protocol": "http",
         "baseURL": "localhost:9091",
         "publicPath": "",
+        "privatePath": "",
         "auth": "oauth2",
         "oauth2": {
             "type": "bearer-jwt",
             "baseSite": "localhost:9091",
             "accessTokenURL": "/oauth/v2/token",
-            "tokenName": "access_token"
+            "tokenName": "access_token",
+            "authorizationHeader": "Y"
         },
         "keyParam": ""
     },

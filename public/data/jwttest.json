@@ -1,21 +1,28 @@
 {
     "endpoints": [
         {
-            "name": "JWT Sample API",
+            "name": "List Methods",
             "methods": [
                 {
-                    "MethodName": "Profile Information",
-                    "Synopsis": "Returns profile information for a given user.",
+                    "MethodName": "List Cluster Workers",
+                    "Synopsis": "This method is used to list the cluster workers currently functioning. Its also lists its system info. <br/><br/><p>Will return the following status codes: <ol><li><strong>200</strong>: Successful</li><li><strong>400</strong>: Validation Errors</li><li><strong>401</strong>: Authentication Failure</li><li><strong>500</strong>: Server Error</li></ol></p>",
                     "HTTPMethod": "GET",
-                    "URI": "/users/:USER_ID",
+                    "URI": "/cluster/worker/list",
                     "RequiresOAuth": "Y",
                     "parameters": [
                         {
-                            "Name": "USER_ID",
-                            "Required": "Y",
-                            "Default": "1297336",
-                            "Type": "int",
-                            "Description": "id"
+                            "Name": "skip",
+                            "Required": "N",
+                            "Default": "0",
+                            "Type": "number",
+                            "Description": "For Pagination. How many records to skip."
+                        },
+                        {
+                            "Name": "limit",
+                            "Required": "N",
+                            "Default": "-1",
+                            "Type": "number",
+                            "Description": "For Pagination. How many records to fetch. '-1' means infinite."
                         }
                     ]
                 }
