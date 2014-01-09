@@ -50,6 +50,20 @@
         },
         "keyParam":""
     },
+    "jwttest": {
+        "name": "JWT BASED (OAuth 2.0 Auth Code)",
+        "protocol": "http",
+        "baseURL": "localhost:9091",
+        "publicPath": "",
+        "auth": "oauth2",
+        "oauth2": {
+            "type": "bearer-jwt",
+            "baseSite": "localhost:9091",
+            "accessTokenURL": "/oauth/v2/token",
+            "tokenName": "access_token"
+        },
+        "keyParam": ""
+    },
     "rdio": {
         "name": "Rdio Beta (OAuth 2.0 Client Credentials)",
         "protocol": "https",

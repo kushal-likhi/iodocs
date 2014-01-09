@@ -36,6 +36,8 @@ var express     = require('express'),
     https       = require('https'),
     crypto      = require('crypto'),
     redis       = require('redis'),
+    jwt         = require('jwt-simple'),
+    request     = require('request'),
     RedisStore  = require('connect-redis')(express);
 
 // Configuration
@@ -207,13 +209,67 @@ function oauth2(req, res, next){
     var apiName = req.body.apiName,
         apiConfig = apisConfig[apiName];
 
-    if (apiConfig.oauth2) {
-        var apiKey = req.body.apiKey || req.body.key,
-            apiSecret = req.body.apiSecret || req.body.secret,
-            refererURL = url.parse(req.headers.referer),
-            callbackURL = refererURL.protocol + '//' + refererURL.host + '/oauth2Success/' + apiName,
-            key = req.sessionID + ':' + apiName,
-            oa = new OAuth2(apiKey,
+    if(!apiConfig.oauth2) {
+        next();
+        return;
+    }
+
+    var apiKey = req.body.apiKey || req.body.key,
+        apiSecret = req.body.apiSecret || req.body.secret,
+        refererURL = url.parse(req.headers.referer),
+        callbackURL = refererURL.protocol + '//' + refererURL.host + '/oauth2Success/' + apiName,
+        key = req.sessionID + ':' + apiName;
+
+    if(apiConfig.oauth2.type == 'bearer-jwt'){
+       console.log("Starting the JWT Bearer OAUTH, v2.0");
+
+       //API url
+       var accessTokenAPIUrl = apiConfig.protocol + "://" + apiConfig.baseURL + apiConfig.oauth2.accessTokenURL;
+
+       var claimSet = {
+            id: apiKey,
+            scope: "all", //For now only all scope is supported
+            exp: (1000*60*60*24) //24 hours
+       };
+
+       var jwtToken = jwt.encode(claimSet, apiSecret);
+
+       request.post(accessTokenAPIUrl, {
+                form: {
+                    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",  //Only this grant type is supported, i.e. Bearer. Pass this string as it is.
+                    "assertion": jwtToken //pass the token
+                }
+            }, function (err, resp, body) {
+                if (err) {
+                    res.send("Error getting OAuth access token : " + util.inspect(err), 500);
+                }
+                var bodyObj = JSON.parse(body);
+                var token = bodyObj[apiConfig.oauth2.tokenName];
+                console.log("Access Token:", token);
+                if(!token){
+                    req.session[apiName] = null;
+                     db.del(key + ':access_token',function(){
+                         db.del(key + ':refresh_token',function(){
+                             res.send(body);
+                         });
+                     });
+                } else {
+                    db.mset([key + ':access_token', token,
+                        key + ':refresh_token', token
+                    ], function(err, results2) {
+                        req.session[apiName] = {};
+                        req.session[apiName].authed = true;
+                        if (config.debug) {
+                            console.log('session[apiName].authed: ' + util.inspect(req.session));
+                        }
+                        res.end(body);
+                    });
+                }
+            }
+       );
+
+    } else {
+        var oa = new OAuth2(apiKey,
                            apiSecret,
                            apiConfig.oauth2.baseSite,
                            apiConfig.oauth2.authorizeURL,
