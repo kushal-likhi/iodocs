@@ -24,6 +24,33 @@
                             "Type": "number",
                             "Description": "For Pagination. How many records to fetch. '-1' means infinite."
                         }
+                    ],
+                    "responses": [
+                        {
+                            "Type": "SUCCESS - List Fetched",
+                            "StatusCode": 200,
+                            "Synopsis": "When everything goes good, you get the list.",
+                            "Format": "JSON",
+                            "parameters": [
+
+                            ]
+                        },
+                        {
+                            "Type": "ERROR - Server Error",
+                            "StatusCode": 500,
+                            "Synopsis": "When some error on server occurs.",
+                            "Format": "JSON",
+                            "parameters": [
+                                {
+                                    "Name": "error",
+                                    "Type": "number",
+                                    "Description": "The Error Message"
+                                }
+                            ],
+                            "sampleResponse": {
+                                "error": "Unable to process, try again later."
+                            }
+                        }
                     ]
                 }
             ]

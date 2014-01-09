@@ -151,6 +151,7 @@ block content
                                                                 - each description, choice in parameter.EnumeratedDescription
                                                                     dt #{choice}
                                                                     dd #{description}
+                              // Create header fields and button to add/remove headers.
                               - if (method.headers && method.headers.length > 0)
                                   div.headers
                                       h4.title
@@ -175,6 +176,49 @@ block content
                                                       td
                                                           a(href='#', class='remove') Remove
                                           a(href='#', class='add-headers') Add Header
-                                      // Create header fields and button to add/remove headers.
+                              div(style='background:#EFF5F5;padding:10px;border:1px solid #9ac0de')
+                                 h2 Response Types
+                                 hr
+                                 - if (method.responses && method.responses.length > 0)
+                                     - var paramCount =0
+                                     - each response in method.responses
+                                        div(style='background:#EEE;padding:10px;border:1px solid #9ac0de;margin-bottom:5px;')
+                                         h4
+                                            strong #{response.StatusCode}
+                                            span(style="display:inline-block;width:10px;")
+                                            span #{response.Type}
+                                         p #{response.Synopsis}
+                                         br
+                                         strong Respons Code:
+                                         span #{response.StatusCode}
+                                         br
+                                         strong Format:
+                                         span #{response.Format}
+                                         br
+                                         br
+                                         strong Response Data Description
+                                         br
+                                         - if (response.parameters)
+                                            table.parameters
+                                               thead
+                                                  tr
+                                                     th Parameter
+                                                     th Type
+                                                     th Description
+                                               tbody
+                                                  - each parameter in response.parameters
+                                                     div
+                                                        tr
+                                                           td.name!=parameter.Name
+                                                           td.type!=parameter.Type
+                                                           td.description
+                                                              p!=parameter.Description || 'No description'
+                                         br
+                                         - if(response.sampleResponse)
+                                           h4
+                                              strong Example Response
+                                           pre #{JSON.stringify(response.sampleResponse,null,4)}
+                                           br
+                                         hr
                               - if (!method['read-only'])
                                   input(type='submit', id=method.MethodName, value='Try it!')
