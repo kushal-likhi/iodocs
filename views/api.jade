@@ -178,11 +178,13 @@ block content
                                           a(href='#', class='add-headers') Add Header
                               div(style='background:#EFF5F5;padding:10px;border:1px solid #9ac0de')
                                  h2 Response Types
+                                 button(onclick="$(this).parent('div').children('.responseBlock').toggle('fast');return false;") Show / Hide
+                                 span    See the possible responses of the API method.
                                  hr
                                  - if (method.responses && method.responses.length > 0)
                                      - var paramCount =0
                                      - each response in method.responses
-                                        div(style='background:#EEE;padding:10px;border:1px solid #9ac0de;margin-bottom:5px;')
+                                        div(style='background:#EEE;padding:10px;border:1px solid #9ac0de;margin-bottom:5px;display:none',class='responseBlock')
                                          h4
                                             strong #{response.StatusCode}
                                             span(style="display:inline-block;width:10px;")
