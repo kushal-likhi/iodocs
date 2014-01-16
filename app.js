@@ -791,6 +791,12 @@ function processRequest(req, res, next) {
                     oa._request(httpMethod, privateReqURL, headers, requestBody, access_token, function (error, data, response) {
                         req.call = privateReqURL;
 
+                        if(error && error.statusCode == 201){
+                            data = error.data;
+                            response = {headers:{statusCode:error.statusCode}, statusCode:error.statusCode};
+                            error = null;
+                        }
+
                         if (error) {
                             console.log('Got error: ' + util.inspect(error));
 
@@ -805,7 +811,8 @@ function processRequest(req, res, next) {
                             next();
                         } else {
                             req.resultHeaders = response.headers;
-                            req.result = JSON.parse(data);
+                            req.result = data;
+                            res.statusCode = response.statusCode;
                             next();
                         }
                     });
