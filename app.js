@@ -24,26 +24,27 @@
 //
 // Module dependencies
 //
-var express     = require('express'),
-    util        = require('util'),
-    fs          = require('fs'),
-    path        = require('path'),
-    OAuth       = require('oauth').OAuth,
-    OAuth2      = require('oauth/lib/oauth2').OAuth2,
-    query       = require('querystring'),
-    url         = require('url'),
-    http        = require('http'),
-    https       = require('https'),
-    crypto      = require('crypto'),
-    redis       = require('redis'),
-    jwt         = require('jwt-simple'),
-    request     = require('request'),
-    RedisStore  = require('connect-redis')(express);
+var express = require('express'),
+    util = require('util'),
+    fs = require('fs'),
+    path = require('path'),
+    OAuth = require('oauth').OAuth,
+    OAuth2 = require('oauth/lib/oauth2').OAuth2,
+    query = require('querystring'),
+    url = require('url'),
+    http = require('http'),
+    https = require('https'),
+    crypto = require('crypto'),
+    domain = require('domain'),
+    redis = require('redis'),
+    jwt = require('jwt-simple'),
+    request = require('request'),
+    RedisStore = require('connect-redis')(express);
 
 // Configuration
 try {
     var config = require('./config.json');
-} catch(e) {
+} catch (e) {
     console.error("File config.json not found or is invalid.  Try: `cp config.json.sample config.json`");
     process.exit(1);
 }
@@ -55,7 +56,7 @@ var defaultDB = '0';
 config.redis.database = config.redis.database || defaultDB;
 
 if (process.env.REDISTOGO_URL) {
-    var rtg   = require("url").parse(process.env.REDISTOGO_URL);
+    var rtg = require("url").parse(process.env.REDISTOGO_URL);
     config.redis.host = rtg.hostname;
     config.redis.port = rtg.port;
     config.redis.password = rtg.auth.split(":")[1];
@@ -64,9 +65,9 @@ if (process.env.REDISTOGO_URL) {
 var db = redis.createClient(config.redis.port, config.redis.host);
 db.auth(config.redis.password);
 
-db.on("error", function(err) {
+db.on("error", function (err) {
     if (config.debug) {
-         console.log("Error " + err);
+        console.log("Error " + err);
     }
 });
 
@@ -85,34 +86,47 @@ try {
     if (config.debug) {
         console.log(util.inspect(apisConfig));
     }
-} catch(e) {
+} catch (e) {
     console.error("File apiconfig.json not found or is invalid.");
     process.exit(1);
 }
 
 var app = module.exports = express();
 
-app.configure(function() {
+app.configure(function () {
     app.set('views', __dirname + '/views');
     app.set('view engine', 'jade');
+    app.use(function (req, res, next) {
+        var d = domain.create();
+        d.on("error", function (error) {
+            console.log(error);
+            res.end("Error procesing:", error.message);
+        });
+        d.add(req);
+        d.add(res);
+        d.add(next);
+        d.run(function () {
+            next();
+        });
+    });
     app.use(express.logger());
     app.use(express.bodyParser());
     app.use(express.methodOverride());
     app.use(express.cookieParser());
     app.use(express.session({
         secret: config.sessionSecret,
-        store:  new RedisStore({
-            'host':   config.redis.host,
-            'port':   config.redis.port,
-            'pass':   config.redis.password,
-            'db'  :   config.redis.database,
+        store: new RedisStore({
+            'host': config.redis.host,
+            'port': config.redis.port,
+            'pass': config.redis.password,
+            'db': config.redis.database,
             'maxAge': 1209600000
         })
     }));
 
     // Global basic authentication on server (applied if configured)
     if (config.basicAuth && config.basicAuth.username && config.basicAuth.password) {
-        app.use(express.basicAuth(function(user, pass, callback) {
+        app.use(express.basicAuth(function (user, pass, callback) {
             var result = (user === config.basicAuth.username && pass === config.basicAuth.password);
             callback(null /* error */, result);
         }));
@@ -124,11 +138,11 @@ app.configure(function() {
     app.use(express.static(__dirname + '/public'));
 });
 
-app.configure('development', function() {
+app.configure('development', function () {
     app.use(express.errorHandler({ dumpExceptions: true, showStack: true }));
 });
 
-app.configure('production', function() {
+app.configure('production', function () {
     app.use(express.errorHandler());
 });
 
@@ -146,12 +160,12 @@ function oauth(req, res, next) {
             refererURL = url.parse(req.headers.referer),
             callbackURL = refererURL.protocol + '//' + refererURL.host + '/authSuccess/' + apiName,
             oa = new OAuth(apiConfig.oauth.requestURL,
-                           apiConfig.oauth.accessURL,
-                           apiKey,
-                           apiSecret,
-                           apiConfig.oauth.version,
-                           callbackURL,
-                           apiConfig.oauth.crypt);
+                apiConfig.oauth.accessURL,
+                apiKey,
+                apiSecret,
+                apiConfig.oauth.version,
+                callbackURL,
+                apiConfig.oauth.crypt);
 
         if (config.debug) {
             console.log('OAuth type: ' + apiConfig.oauth.type);
@@ -162,7 +176,7 @@ function oauth(req, res, next) {
         }
 
         // Check if the API even uses OAuth, then if the method requires oauth, then if the session is not authed
-        if (apiConfig.oauth.type == 'three-legged' && req.body.oauth == 'authrequired' && (!req.session[apiName] || !req.session[apiName].authed) ) {
+        if (apiConfig.oauth.type == 'three-legged' && req.body.oauth == 'authrequired' && (!req.session[apiName] || !req.session[apiName].authed)) {
             if (config.debug) {
                 console.log('req.session: ' + util.inspect(req.session));
                 console.log('headers: ' + util.inspect(req.headers));
@@ -170,7 +184,7 @@ function oauth(req, res, next) {
                 console.log('sessionID: ' + util.inspect(req.sessionID));
             }
 
-            oa.getOAuthRequestToken(function(err, oauthToken, oauthTokenSecret, results) {
+            oa.getOAuthRequestToken(function (err, oauthToken, oauthTokenSecret, results) {
                 if (err) {
                     res.send("Error getting OAuth request token : " + util.inspect(err), 500);
                 } else {
@@ -204,12 +218,12 @@ function oauth(req, res, next) {
 
 }
 
-function oauth2(req, res, next){
+function oauth2(req, res, next) {
     console.log('OAuth2 process started');
     var apiName = req.body.apiName,
         apiConfig = apisConfig[apiName];
 
-    if(!apiConfig.oauth2) {
+    if (!apiConfig.oauth2) {
         next();
         return;
     }
@@ -220,21 +234,21 @@ function oauth2(req, res, next){
         callbackURL = refererURL.protocol + '//' + refererURL.host + '/oauth2Success/' + apiName,
         key = req.sessionID + ':' + apiName;
 
-    if(apiConfig.oauth2.type == 'bearer-jwt'){
-       console.log("Starting the JWT Bearer OAUTH, v2.0");
+    if (apiConfig.oauth2.type == 'bearer-jwt') {
+        console.log("Starting the JWT Bearer OAUTH, v2.0");
 
-       //API url
-       var accessTokenAPIUrl = apiConfig.protocol + "://" + apiConfig.baseURL + apiConfig.oauth2.accessTokenURL;
+        //API url
+        var accessTokenAPIUrl = apiConfig.protocol + "://" + apiConfig.baseURL + apiConfig.oauth2.accessTokenURL;
 
-       var claimSet = {
+        var claimSet = {
             id: apiKey,
             scope: "all", //For now only all scope is supported
-            exp: (1000*60*60*24) //24 hours
-       };
+            exp: (1000 * 60 * 60 * 24) //24 hours
+        };
 
-       var jwtToken = jwt.encode(claimSet, apiSecret);
+        var jwtToken = jwt.encode(claimSet, apiSecret);
 
-       request.post(accessTokenAPIUrl, {
+        request.post(accessTokenAPIUrl, {
                 form: {
                     "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",  //Only this grant type is supported, i.e. Bearer. Pass this string as it is.
                     "assertion": jwtToken //pass the token
@@ -246,17 +260,17 @@ function oauth2(req, res, next){
                 var bodyObj = JSON.parse(body);
                 var token = bodyObj[apiConfig.oauth2.tokenName];
                 console.log("Access Token:", token);
-                if(!token){
+                if (!token) {
                     req.session[apiName] = null;
-                     db.del(key + ':access_token',function(){
-                         db.del(key + ':refresh_token',function(){
-                             res.send(body);
-                         });
-                     });
+                    db.del(key + ':access_token', function () {
+                        db.del(key + ':refresh_token', function () {
+                            res.send(body);
+                        });
+                    });
                 } else {
                     db.mset([key + ':access_token', token,
                         key + ':refresh_token', token
-                    ], function(err, results2) {
+                    ], function (err, results2) {
                         req.session[apiName] = {};
                         req.session[apiName].authed = true;
                         if (config.debug) {
@@ -266,14 +280,14 @@ function oauth2(req, res, next){
                     });
                 }
             }
-       );
+        );
 
     } else {
         var oa = new OAuth2(apiKey,
-                           apiSecret,
-                           apiConfig.oauth2.baseSite,
-                           apiConfig.oauth2.authorizeURL,
-                           apiConfig.oauth2.accessTokenURL);
+            apiSecret,
+            apiConfig.oauth2.baseSite,
+            apiConfig.oauth2.authorizeURL,
+            apiConfig.oauth2.accessTokenURL);
 
         if (apiConfig.oauth2.tokenName) {
             oa.setAccessTokenName(apiConfig.oauth2.tokenName);
@@ -289,7 +303,7 @@ function oauth2(req, res, next){
 
         var redirectUrl;
         if (apiConfig.oauth2.type == 'authorization-code') {
-            redirectUrl = oa.getAuthorizeUrl({redirect_uri : callbackURL, response_type : 'code'});
+            redirectUrl = oa.getAuthorizeUrl({redirect_uri: callbackURL, response_type: 'code'});
 
             db.set(key + ':apiKey', apiKey, redis.print);
             db.set(key + ':apiSecret', apiSecret, redis.print);
@@ -304,7 +318,7 @@ function oauth2(req, res, next){
         }
         else if (apiConfig.oauth2.type == 'implicit') {
             oa._authorizeUrl = oa._accessTokenUrl;
-            redirectUrl = oa.getAuthorizeUrl({redirect_uri : callbackURL, response_type : 'token'});
+            redirectUrl = oa.getAuthorizeUrl({redirect_uri: callbackURL, response_type: 'token'});
 
             db.set(key + ':apiKey', apiKey, redis.print);
             db.set(key + ':apiSecret', apiSecret, redis.print);
@@ -321,10 +335,10 @@ function oauth2(req, res, next){
             var accessURL = apiConfig.oauth2.baseSite + apiConfig.oauth2.accessTokenURL;
             var basic_cred = apiKey + ':' + apiSecret;
             var encoded_basic = new Buffer(basic_cred).toString('base64');
- 
+
             var http_method = (apiConfig.oauth2.authorizationHeader == 'Y') ? "POST" : "GET";
-            var header = (apiConfig.oauth2.authorizationHeader == 'Y') ? {'Authorization' : 'Basic ' + encoded_basic} : '';
-            var fillerpost = query.stringify({grant_type : "client_credentials", client_id : apiKey, client_secret : apiSecret});
+            var header = (apiConfig.oauth2.authorizationHeader == 'Y') ? {'Authorization': 'Basic ' + encoded_basic} : '';
+            var fillerpost = query.stringify({grant_type: "client_credentials", client_id: apiKey, client_secret: apiSecret});
 
             db.set(key + ':apiKey', apiKey, redis.print);
             db.set(key + ':apiSecret', apiSecret, redis.print);
@@ -336,38 +350,38 @@ function oauth2(req, res, next){
             db.expire(key + ':baseURL', 1209600000);
 
             //client_credentials w/Authorization header
-            oa._request(http_method, accessURL, header, 
+            oa._request(http_method, accessURL, header,
                 fillerpost,
-                '', function(error, data, response) {
-                if (error) {
-                    res.send("Error getting OAuth access token : " + util.inspect(error), 500);
-                }
-                else {
-                    var results;
-                    try {
-                        results = JSON.parse(data);
+                '', function (error, data, response) {
+                    if (error) {
+                        res.send("Error getting OAuth access token : " + util.inspect(error), 500);
                     }
-                    catch(e) {
-                        results = query.parse(data)
-                    }
-                    var oauth2access_token = results["access_token"];
-                    var oauth2refresh_token = results["refresh_token"];
+                    else {
+                        var results;
+                        try {
+                            results = JSON.parse(data);
+                        }
+                        catch (e) {
+                            results = query.parse(data)
+                        }
+                        var oauth2access_token = results["access_token"];
+                        var oauth2refresh_token = results["refresh_token"];
 
-                    if (config.debug) {
-                        console.log('results: ' + util.inspect(results));
-                    }
-                    db.mset([key + ':access_token', oauth2access_token,
+                        if (config.debug) {
+                            console.log('results: ' + util.inspect(results));
+                        }
+                        db.mset([key + ':access_token', oauth2access_token,
                             key + ':refresh_token', oauth2refresh_token
-                    ], function(err, results2) {
-                        db.set(key + ':accessToken', oauth2access_token, redis.print);
-                        db.set(key + ':refreshToken', oauth2refresh_token, redis.print);
-                        db.expire(key + ':accessToken', 1209600000);
-                        db.expire(key + ':refreshToken', 1209600000);
-                        
-                        res.send({'refresh': callbackURL});
-                    });
-                }
-            })
+                        ], function (err, results2) {
+                            db.set(key + ':accessToken', oauth2access_token, redis.print);
+                            db.set(key + ':refreshToken', oauth2refresh_token, redis.print);
+                            db.expire(key + ':accessToken', 1209600000);
+                            db.expire(key + ':refreshToken', 1209600000);
+
+                            res.send({'refresh': callbackURL});
+                        });
+                    }
+                })
         }
     }
 }
@@ -375,72 +389,72 @@ function oauth2(req, res, next){
 
 function oauth2Success(req, res, next) {
     console.log('oauth2Success started');
-        var apiKey,
-            apiSecret,
-            apiName = req.params.api,
-            apiConfig = apisConfig[apiName],
-            key = req.sessionID + ':' + apiName,
-            baseURL;
+    var apiKey,
+        apiSecret,
+        apiName = req.params.api,
+        apiConfig = apisConfig[apiName],
+        key = req.sessionID + ':' + apiName,
+        baseURL;
+
+    if (config.debug) {
+        console.log('apiName: ' + apiName);
+        console.log('key: ' + key);
+        console.log(util.inspect(req.params));
+    }
+    db.mget([
+        key + ':apiKey',
+        key + ':apiSecret',
+        key + ':baseURL',
+        key + ':accessToken',
+        key + ':refreshToken'
+    ], function (err, result) {
+        if (err) {
+            console.log(util.inspect(err));
+        }
+        apiKey = result[0];
+        apiSecret = result[1];
+        baseURL = result[2];
+
+        if (result[3] && apiConfig.oauth2.type == 'client_credentials') {
+            req.session[apiName] = {};
+            req.session[apiName].authed = true;
+            if (config.debug) {
+                console.log('session[apiName].authed: ' + util.inspect(req.session));
+            }
+            next();
+        }
 
         if (config.debug) {
-            console.log('apiName: ' + apiName);
-            console.log('key: ' + key);
-            console.log(util.inspect(req.params));
+            console.log(util.inspect(">>" + req.query.oauth_verifier));
         }
-        db.mget([
-            key + ':apiKey',
-            key + ':apiSecret',
-            key + ':baseURL',
-            key + ':accessToken',
-            key + ':refreshToken'
-        ], function(err, result) {
-            if (err) {
-                console.log(util.inspect(err));
-            }
-            apiKey = result[0];
-            apiSecret = result[1];
-            baseURL = result[2];
 
-            if (result[3] && apiConfig.oauth2.type == 'client_credentials') {
-                req.session[apiName] = {};
-                req.session[apiName].authed = true;
-                if (config.debug) {
-                    console.log('session[apiName].authed: ' + util.inspect(req.session));
-                }
-                next();
-            }
+        var oa = new OAuth2(apiKey,
+            apiSecret,
+            apiConfig.oauth2.baseSite,
+            apiConfig.oauth2.authorizeURL,
+            apiConfig.oauth2.accessTokenURL);
 
-            if (config.debug) {
-                console.log(util.inspect(">>"+req.query.oauth_verifier));
-            }
+        if (apiConfig.oauth2.tokenName) {
+            oa.setAccessTokenName(apiConfig.oauth2.tokenName);
+        }
 
-            var oa = new OAuth2(apiKey,
-                   apiSecret,
-                   apiConfig.oauth2.baseSite,
-                   apiConfig.oauth2.authorizeURL,
-                   apiConfig.oauth2.accessTokenURL);
+        if (config.debug) {
+            console.log(util.inspect(oa));
+        }
 
-            if (apiConfig.oauth2.tokenName) {
-                oa.setAccessTokenName(apiConfig.oauth2.tokenName);
-            }
-
-            if (config.debug) {
-                console.log(util.inspect(oa));
-            }
-
-            if (apiConfig.oauth2.type == 'authorization-code') {
-                oa.getOAuthAccessToken(req.query.code,
-                    {grant_type : "authorization_code", redirect_uri : baseURL, client_id : apiKey, client_secret : apiSecret},
-                    function(error, oauth2access_token, oauth2refresh_token, results){
+        if (apiConfig.oauth2.type == 'authorization-code') {
+            oa.getOAuthAccessToken(req.query.code,
+                {grant_type: "authorization_code", redirect_uri: baseURL, client_id: apiKey, client_secret: apiSecret},
+                function (error, oauth2access_token, oauth2refresh_token, results) {
                     if (error) {
-                        res.send("Error getting OAuth access token : " + util.inspect(error) + "["+oauth2access_token+"]"+ "["+oauth2refresh_token+"]", 500);
+                        res.send("Error getting OAuth access token : " + util.inspect(error) + "[" + oauth2access_token + "]" + "[" + oauth2refresh_token + "]", 500);
                     } else {
                         if (config.debug) {
                             console.log('results: ' + util.inspect(results));
                         }
                         db.mset([key + ':access_token', oauth2access_token,
-                                key + ':refresh_token', oauth2refresh_token
-                        ], function(err, results2) {
+                            key + ':refresh_token', oauth2refresh_token
+                        ], function (err, results2) {
                             req.session[apiName] = {};
                             req.session[apiName].authed = true;
                             if (config.debug) {
@@ -450,11 +464,11 @@ function oauth2Success(req, res, next) {
                         });
                     }
                 });
-            }
-            else if (apiConfig.oauth2.type == 'implicit') {
-                next();
-            }
-        });
+        }
+        else if (apiConfig.oauth2.type == 'implicit') {
+            next();
+        }
+    });
 }
 
 
@@ -482,7 +496,7 @@ function oauthSuccess(req, res, next) {
         key + ':requestTokenSecret',
         key + ':apiKey',
         key + ':apiSecret'
-    ], function(err, result) {
+    ], function (err, result) {
         if (err) {
             console.log(util.inspect(err));
         }
@@ -492,34 +506,34 @@ function oauthSuccess(req, res, next) {
         apiSecret = result[3];
 
         if (config.debug) {
-            console.log(util.inspect(">>"+oauthRequestToken));
-            console.log(util.inspect(">>"+oauthRequestTokenSecret));
-            console.log(util.inspect(">>"+req.query.oauth_verifier));
+            console.log(util.inspect(">>" + oauthRequestToken));
+            console.log(util.inspect(">>" + oauthRequestTokenSecret));
+            console.log(util.inspect(">>" + req.query.oauth_verifier));
         }
 
         var oa = new OAuth(apiConfig.oauth.requestURL,
-                           apiConfig.oauth.accessURL,
-                           apiKey,
-                           apiSecret,
-                           apiConfig.oauth.version,
-                           null,
-                           apiConfig.oauth.crypt);
+            apiConfig.oauth.accessURL,
+            apiKey,
+            apiSecret,
+            apiConfig.oauth.version,
+            null,
+            apiConfig.oauth.crypt);
 
 
         if (config.debug) {
             console.log(util.inspect(oa));
         }
 
-        oa.getOAuthAccessToken(oauthRequestToken, oauthRequestTokenSecret, req.query.oauth_verifier, function(error, oauthAccessToken, oauthAccessTokenSecret, results) {
+        oa.getOAuthAccessToken(oauthRequestToken, oauthRequestTokenSecret, req.query.oauth_verifier, function (error, oauthAccessToken, oauthAccessTokenSecret, results) {
             if (error) {
-                res.send("Error getting OAuth access token : " + util.inspect(error) + "["+oauthAccessToken+"]"+ "["+oauthAccessTokenSecret+"]"+ "["+util.inspect(results)+"]", 500);
+                res.send("Error getting OAuth access token : " + util.inspect(error) + "[" + oauthAccessToken + "]" + "[" + oauthAccessTokenSecret + "]" + "[" + util.inspect(results) + "]", 500);
             } else {
                 if (config.debug) {
                     console.log('results: ' + util.inspect(results));
                 }
                 db.mset([key + ':accessToken', oauthAccessToken,
                     key + ':accessTokenSecret', oauthAccessTokenSecret
-                ], function(err, results2) {
+                ], function (err, results2) {
                     req.session[apiName] = {};
                     req.session[apiName].authed = true;
                     if (config.debug) {
@@ -545,7 +559,7 @@ function processRequest(req, res, next) {
     var reqQuery = req.body,
         customHeaders = {},
         params = reqQuery.params || {},
-        locations = reqQuery.locations || {},
+        locations = reqQuery.locations || {},
         methodURL = reqQuery.methodUri,
         httpMethod = reqQuery.httpMethod,
         apiKey = reqQuery.apiKey,
@@ -556,27 +570,27 @@ function processRequest(req, res, next) {
         implicitAccessToken = reqQuery.accessToken;
 
     for (var param in params) {
-         if (params.hasOwnProperty(param)) {
-             if (params[param] !== '') {
-                 if (locations[param] == 'header') {
-                     // Extract custom headers from the params
-                     customHeaders[param] = params[param];
-                     delete params[param];
-                 } else {
-                     // Replace placeholders in the methodURL with matching params
-                     // URL params are prepended with ":"
-                     var regx = new RegExp(':' + param);
+        if (params.hasOwnProperty(param)) {
+            if (params[param] !== '') {
+                if (locations[param] == 'header') {
+                    // Extract custom headers from the params
+                    customHeaders[param] = params[param];
+                    delete params[param];
+                } else {
+                    // Replace placeholders in the methodURL with matching params
+                    // URL params are prepended with ":"
+                    var regx = new RegExp(':' + param);
 
-                     // If the param is actually a part of the URL, put it in the URL and remove the param
-                     if (!!regx.test(methodURL)) {
-                         methodURL = methodURL.replace(regx, encodeURIComponent(params[param]));
-                         delete params[param]
-                     }
-                 }
-             } else {
-                 delete params[param]; // Delete blank params
-             }
-         }
+                    // If the param is actually a part of the URL, put it in the URL and remove the param
+                    if (!!regx.test(methodURL)) {
+                        methodURL = methodURL.replace(regx, encodeURIComponent(params[param]));
+                        delete params[param]
+                    }
+                }
+            } else {
+                delete params[param]; // Delete blank params
+            }
+        }
     }
 
     var baseHostInfo = apiConfig.baseURL.split(':');
@@ -605,7 +619,7 @@ function processRequest(req, res, next) {
             path: apiConfig.publicPath + methodURL// + ((paramString.length > 0) ? '?' + paramString : "")
         };
 
-    if (['POST','DELETE','PUT'].indexOf(httpMethod) !== -1) {
+    if (['POST', 'DELETE', 'PUT'].indexOf(httpMethod) !== -1) {
         var requestBody = query.stringify(params);
     }
 
@@ -619,24 +633,24 @@ function processRequest(req, res, next) {
             }
 
             db.mget([key + ':apiKey',
-                     key + ':apiSecret',
-                     key + ':accessToken',
-                     key + ':accessTokenSecret'
-                ],
-                function(err, results) {
+                key + ':apiSecret',
+                key + ':accessToken',
+                key + ':accessTokenSecret'
+            ],
+                function (err, results) {
 
-                    var apiKey = (typeof reqQuery.apiKey == "undefined" || reqQuery.apiKey == "undefined")?results[0]:reqQuery.apiKey,
-                        apiSecret = (typeof reqQuery.apiSecret == "undefined" || reqQuery.apiSecret == "undefined")?results[1]:reqQuery.apiSecret,
+                    var apiKey = (typeof reqQuery.apiKey == "undefined" || reqQuery.apiKey == "undefined") ? results[0] : reqQuery.apiKey,
+                        apiSecret = (typeof reqQuery.apiSecret == "undefined" || reqQuery.apiSecret == "undefined") ? results[1] : reqQuery.apiSecret,
                         accessToken = results[2],
                         accessTokenSecret = results[3];
 
                     var oa = new OAuth(apiConfig.oauth.requestURL || null,
-                                       apiConfig.oauth.accessURL || null,
-                                       apiKey || null,
-                                       apiSecret || null,
-                                       apiConfig.oauth.version || null,
-                                       null,
-                                       apiConfig.oauth.crypt);
+                        apiConfig.oauth.accessURL || null,
+                        apiKey || null,
+                        apiSecret || null,
+                        apiConfig.oauth.version || null,
+                        null,
+                        apiConfig.oauth.crypt);
 
                     if (config.debug) {
                         console.log('Access token: ' + accessToken);
@@ -644,7 +658,7 @@ function processRequest(req, res, next) {
                         console.log('key: ' + key);
                     }
 
-                    oa.getProtectedResource(privateReqURL, httpMethod, accessToken, accessTokenSecret,  function (error, data, response) {
+                    oa.getProtectedResource(privateReqURL, httpMethod, accessToken, accessTokenSecret, function (error, data, response) {
                         req.call = privateReqURL;
 
                         if (error) {
@@ -675,15 +689,15 @@ function processRequest(req, res, next) {
 
             var body,
                 oa = new OAuth(null,
-                               null,
-                               apiKey || null,
-                               apiSecret || null,
-                               apiConfig.oauth.version || null,
-                               null,
-                               apiConfig.oauth.crypt);
+                    null,
+                    apiKey || null,
+                    apiSecret || null,
+                    apiConfig.oauth.version || null,
+                    null,
+                    apiConfig.oauth.crypt);
 
             var resource = options.protocol + '://' + options.host + options.path,
-                cb = function(error, data, response) {
+                cb = function (error, data, response) {
                     if (error) {
                         if (error.data == 'Server Error' || error.data == '') {
                             req.result = 'Server Error';
@@ -723,14 +737,14 @@ function processRequest(req, res, next) {
             switch (httpMethod) {
                 case 'GET':
                     console.log(resource);
-                    oa.get(resource, '', '',cb);
+                    oa.get(resource, '', '', cb);
                     break;
                 case 'PUT':
                 case 'POST':
                     oa.post(resource, '', '', JSON.stringify(obj), null, cb);
                     break;
                 case 'DELETE':
-                    oa.delete(resource,'','',cb);
+                    oa.delete(resource, '', '', cb);
                     break;
             }
 
@@ -743,13 +757,13 @@ function processRequest(req, res, next) {
 
         if (implicitAccessToken) {
             db.mset([key + ':access_token', implicitAccessToken
-                    ], function(err, results2) {
-                        req.session[apiName] = {};
-                        req.session[apiName].authed = true;
-                        if (config.debug) {
-                            console.log('session[apiName].authed: ' + util.inspect(req.session));
-                        }
-                    });
+            ], function (err, results2) {
+                req.session[apiName] = {};
+                req.session[apiName].authed = true;
+                if (config.debug) {
+                    console.log('session[apiName].authed: ' + util.inspect(req.session));
+                }
+            });
         }
 
         if (reqQuery.oauth == 'authrequired' || (req.session[apiName] && req.session[apiName].authed)) {
@@ -758,21 +772,21 @@ function processRequest(req, res, next) {
             }
 
             db.mget([key + ':apiKey',
-                     key + ':apiSecret',
-                     key + ':access_token',
-                     key + ':refresh_token'
-                ],
-                function(err, results) {
-                    var apiKey = (typeof reqQuery.apiKey == "undefined" || reqQuery.apiKey == "undefined")?results[0]:reqQuery.apiKey,
-                        apiSecret = (typeof reqQuery.apiSecret == "undefined" || reqQuery.apiSecret == "undefined")?results[1]:reqQuery.apiSecret,
+                key + ':apiSecret',
+                key + ':access_token',
+                key + ':refresh_token'
+            ],
+                function (err, results) {
+                    var apiKey = (typeof reqQuery.apiKey == "undefined" || reqQuery.apiKey == "undefined") ? results[0] : reqQuery.apiKey,
+                        apiSecret = (typeof reqQuery.apiSecret == "undefined" || reqQuery.apiSecret == "undefined") ? results[1] : reqQuery.apiSecret,
                         access_token = (implicitAccessToken) ? implicitAccessToken : results[2],
                         refresh_token = results[3];
 
                     var oa = new OAuth2(apiKey,
-                           apiSecret,
-                           apiConfig.oauth2.baseSite,
-                           apiConfig.oauth2.authorizeURL,
-                           apiConfig.oauth2.accessTokenURL);
+                        apiSecret,
+                        apiConfig.oauth2.baseSite,
+                        apiConfig.oauth2.authorizeURL,
+                        apiConfig.oauth2.accessTokenURL);
 
                     if (apiConfig.oauth2.tokenName) {
                         oa.setAccessTokenName(apiConfig.oauth2.tokenName);
@@ -785,15 +799,15 @@ function processRequest(req, res, next) {
                     }
 
                     if (apiConfig.oauth2.authorizationHeader && (apiConfig.oauth2.authorizationHeader == 'Y')) {
-                        var headers = {Authorization : "Bearer " + access_token};
+                        var headers = {Authorization: "Bearer " + access_token};
                     }
 
                     oa._request(httpMethod, privateReqURL, headers, requestBody, access_token, function (error, data, response) {
                         req.call = privateReqURL;
 
-                        if(error && error.statusCode == 201){
+                        if (error && error.statusCode == 201) {
                             data = error.data;
-                            response = {headers:{statusCode:error.statusCode}, statusCode:error.statusCode};
+                            response = {headers: {statusCode: error.statusCode}, statusCode: error.statusCode};
                             error = null;
                         }
 
@@ -831,7 +845,7 @@ function processRequest(req, res, next) {
     function unsecuredCall() {
         console.log('Unsecured Call');
 
-        if (['POST','PUT','DELETE'].indexOf(httpMethod) === -1) {
+        if (['POST', 'PUT', 'DELETE'].indexOf(httpMethod) === -1) {
             options.path += ((paramString.length > 0) ? '?' + paramString : "");
         }
 
@@ -851,13 +865,13 @@ function processRequest(req, res, next) {
             var timeStamp, sig;
             if (apiConfig.signature.type == 'signed_md5') {
                 // Add signature parameter
-                timeStamp = Math.round(new Date().getTime()/1000);
+                timeStamp = Math.round(new Date().getTime() / 1000);
                 sig = crypto.createHash('md5').update('' + apiKey + apiSecret + timeStamp + '').digest(apiConfig.signature.digest);
                 options.path += '&' + apiConfig.signature.sigParam + '=' + sig;
             }
             else if (apiConfig.signature.type == 'signed_sha256') { // sha256(key+secret+epoch)
                 // Add signature parameter
-                timeStamp = Math.round(new Date().getTime()/1000);
+                timeStamp = Math.round(new Date().getTime() / 1000);
                 sig = crypto.createHash('sha256').update('' + apiKey + apiSecret + timeStamp + '').digest(apiConfig.signature.digest);
                 options.path += '&' + apiConfig.signature.sigParam + '=' + sig;
             }
@@ -872,7 +886,7 @@ function processRequest(req, res, next) {
 
             for (var x = 0, len = reqQuery.headerNames.length; x < len; x++) {
                 if (config.debug) {
-                  console.log('Setting header: ' + reqQuery.headerNames[x] + ':' + reqQuery.headerValues[x]);
+                    console.log('Setting header: ' + reqQuery.headerNames[x] + ':' + reqQuery.headerValues[x]);
                 }
                 if (reqQuery.headerNames[x] != '') {
                     headers[reqQuery.headerNames[x]] = reqQuery.headerValues[x];
@@ -881,7 +895,7 @@ function processRequest(req, res, next) {
 
             options.headers = headers;
         }
-        if(options.headers === void 0){
+        if (options.headers === void 0) {
             options.headers = {}
         }
         if (!options.headers['Content-Length']) {
@@ -912,7 +926,7 @@ function processRequest(req, res, next) {
         }
 
         // API Call. response is the response from the API, res is the response we will send back to the user.
-        var apiCall = doRequest(options, function(response) {
+        var apiCall = doRequest(options,function (response) {
             response.setEncoding('utf-8');
 
             if (config.debug) {
@@ -924,11 +938,11 @@ function processRequest(req, res, next) {
 
             var body = '';
 
-            response.on('data', function(data) {
+            response.on('data', function (data) {
                 body += data;
             });
 
-            response.on('end', function() {
+            response.on('end', function () {
                 delete options.agent;
 
                 var responseContentType = response.headers['content-type'];
@@ -950,13 +964,13 @@ function processRequest(req, res, next) {
 
                 next();
             })
-        }).on('error', function(e) {
-            if (config.debug) {
-                console.log('HEADERS: ' + JSON.stringify(res.headers));
-                console.log("Got error: " + e.message);
-                console.log("Error: " + util.inspect(e));
-            }
-        });
+        }).on('error', function (e) {
+                if (config.debug) {
+                    console.log('HEADERS: ' + JSON.stringify(res.headers));
+                    console.log("Got error: " + e.message);
+                    console.log("Error: " + util.inspect(e));
+                }
+            });
 
         if (requestBody) {
             apiCall.end(requestBody, 'utf-8');
@@ -972,7 +986,7 @@ function checkPathForAPI(req, res, next) {
     if (!req.params) req.params = {};
     if (!req.params.api) {
         // If api wasn't passed in as a parameter, check the path to see if it's there
-        var pathName = req.url.replace('/','');
+        var pathName = req.url.replace('/', '');
         // Is it a valid API - if there's a config file we can assume so
         fs.stat(path.join(config.apiConfigDir, pathName + '.json'), function (error, stats) {
             if (stats) {
@@ -1008,14 +1022,14 @@ function dynamicHelpers(req, res, next) {
 //
 // Routes
 //
-app.get('/', function(req, res) {
+app.get('/', function (req, res) {
     res.render('listAPIs', {
         title: config.title
     });
 });
 
 // Process the API request
-app.post('/processReq', oauth, processRequest, function(req, res) {
+app.post('/processReq', oauth, processRequest, function (req, res) {
     var result = {
         headers: req.resultHeaders,
         response: req.result,
@@ -1031,26 +1045,26 @@ app.all('/auth2', oauth2);
 
 
 // OAuth callback page, closes the window immediately after storing access token/secret
-app.get('/authSuccess/:api', oauthSuccess, function(req, res) {
+app.get('/authSuccess/:api', oauthSuccess, function (req, res) {
     res.render('authSuccess', {
         title: 'OAuth Successful'
     });
 });
 
 // OAuth callback page, closes the window immediately after storing access token/secret
-app.get('/oauth2Success/:api', oauth2Success, function(req, res) {
+app.get('/oauth2Success/:api', oauth2Success, function (req, res) {
     res.render('authSuccess', {
         title: 'OAuth Successful'
     });
 });
 
-app.post('/upload', function(req, res) {
-  res.redirect('back');
+app.post('/upload', function (req, res) {
+    res.redirect('back');
 });
 
 // API shortname, all lowercase
-app.get('/:api([^\.]+)', function(req, res) {
-    req.params.api=req.params.api.replace(/\/$/,'');
+app.get('/:api([^\.]+)', function (req, res) {
+    req.params.api = req.params.api.replace(/\/$/, '');
     res.render('api');
 });
 
@@ -1059,7 +1073,7 @@ app.get('/:api([^\.]+)', function(req, res) {
 if (!module.parent) {
     var port = process.env.PORT || config.port;
     var l = app.listen(port);
-    l.on('listening', function(err) {
+    l.on('listening', function (err) {
         console.log("Express server listening on port %d", port);
     });
 }
